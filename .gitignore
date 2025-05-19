@@ -1,0 +1,7 @@
+.env
+nginx/
+temp_files/
+# Ignore all files in the temp_files directory
+# but not the directory itself
+temp_files/*
+!temp_files/.gitkeep

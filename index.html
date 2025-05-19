@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>File Converter</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .upload-container {
+            max-width: 600px;
+            margin: 4rem auto;
+            padding: 2rem;
+            background-color: #f9fafb; /* gray-50 */
+            border-radius: 0.75rem; /* rounded-xl */
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+        .file-input-label {
+            display: block;
+            padding: 1rem 1.5rem;
+            border: 2px dashed #d1d5db; /* gray-300 */
+            border-radius: 0.5rem; /* rounded-lg */
+            background-color: #ffffff;
+            text-align: center;
+            cursor: pointer;
+            transition: background-color 0.2s ease-in-out, border-color 0.2s ease-in-out;
+        }
+        .file-input-label:hover {
+            background-color: #f3f4f6; /* gray-100 */
+            border-color: #9ca3af; /* gray-400 */
+        }
+        .progress-bar-container {
+            width: 100%;
+            background-color: #e5e7eb; /* gray-200 */
+            border-radius: 0.375rem; /* rounded-md */
+            overflow: hidden;
+            height: 1.5rem; /* h-6 */
+        }
+        .progress-bar {
+            background-color: #3b82f6; /* blue-500 */
+            height: 100%;
+            width: 0%;
+            text-align: center;
+            line-height: 1.5rem; /* leading-6 */
+            color: white;
+            transition: width 0.3s ease-in-out;
+        }
+        .alert {
+            padding: 1rem;
+            border-radius: 0.375rem; /* rounded-md */
+            margin-bottom: 1rem;
+        }
+        .alert-success {
+            background-color: #d1fae5; /* green-100 */
+            border: 1px solid #6ee7b7; /* green-300 */
+            color: #065f46; /* green-800 */
+        }
+        .alert-danger {
+            background-color: #fee2e2; /* red-100 */
+            border: 1px solid #fca5a5; /* red-300 */
+            color: #991b1b; /* red-800 */
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800">
+
+    <div class="upload-container">
+        <h1 class="text-3xl font-bold text-center mb-8 text-gray-700">File Converter</h1>
+
+        <form id="uploadForm" class="space-y-6">
+            <div>
+                <label for="fileInput" class="file-input-label">
+                    <span id="fileInputText">Drag & drop a file here, or click to select</span>
+                    <input type="file" id="fileInput" class="hidden" required>
+                </label>
+                <p id="fileNameDisplay" class="mt-2 text-sm text-gray-600"></p>
+            </div>
+
+            <button type="submit" id="submitButton" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-4 rounded-lg shadow-md transition duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50">
+                Upload & Convert
+            </button>
+        </form>
+
+        <div id="progressContainer" class="mt-6 hidden">
+            <p class="text-sm font-medium text-gray-700 mb-1">Upload Progress:</p>
+            <div class="progress-bar-container">
+                <div id="progressBar" class="progress-bar">0%</div>
+            </div>
+        </div>
+
+        <div id="messageArea" class="mt-6"></div>
+        
+        <div id="downloadArea" class="mt-6 hidden">
+            <h2 class="text-xl font-semibold text-gray-700 mb-2">Conversion Complete!</h2>
+            <a id="downloadLink" href="#" class="inline-block bg-green-500 hover:bg-green-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md transition duration-150 ease-in-out" download>
+                Download Converted File
+            </a>
+            <p class="text-xs text-gray-500 mt-2">Link expires in approximately 10 minutes.</p>
+        </div>
+    </div>
+
+    <script>
+        const uploadForm = document.getElementById('uploadForm');
+        const fileInput = document.getElementById('fileInput');
+        const fileInputText = document.getElementById('fileInputText');
+        const fileNameDisplay = document.getElementById('fileNameDisplay');
+        const submitButton = document.getElementById('submitButton');
+        const progressContainer = document.getElementById('progressContainer');
+        const progressBar = document.getElementById('progressBar');
+        const messageArea = document.getElementById('messageArea');
+        const downloadArea = document.getElementById('downloadArea');
+        const downloadLink = document.getElementById('downloadLink');
+        // const convertToSelect = document.getElementById('convertTo'); // If using conversion type selection
+
+        // Handle drag and drop
+        const fileInputLabel = fileInput.parentElement;
+
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            fileInputLabel.addEventListener(eventName, preventDefaults, false);
+            document.body.addEventListener(eventName, preventDefaults, false); // Prevent browser from opening file
+        });
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+            fileInputLabel.addEventListener(eventName, () => fileInputLabel.classList.add('bg-gray-100', 'border-blue-500'), false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            fileInputLabel.addEventListener(eventName, () => fileInputLabel.classList.remove('bg-gray-100', 'border-blue-500'), false);
+        });
+
+        fileInputLabel.addEventListener('drop', handleDrop, false);
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        function handleDrop(e) {
+            const dt = e.dataTransfer;
+            const files = dt.files;
+            if (files.length > 0) {
+                fileInput.files = files;
+                updateFileNameDisplay();
+            }
+        }
+        
+        fileInput.addEventListener('change', updateFileNameDisplay);
+
+        function updateFileNameDisplay() {
+            if (fileInput.files.length > 0) {
+                fileNameDisplay.textContent = `Selected file: ${fileInput.files[0].name}`;
+                fileInputText.textContent = "Change file";
+            } else {
+                fileNameDisplay.textContent = '';
+                fileInputText.textContent = "Drag & drop a file here, or click to select";
+            }
+        }
+
+        uploadForm.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            
+            const file = fileInput.files[0];
+            // const targetFormat = convertToSelect.value; // If using conversion type selection
+
+            if (!file) {
+                showMessage('Please select a file to upload.', 'danger');
+                return;
+            }
+
+            // Reset UI
+            submitButton.disabled = true;
+            submitButton.textContent = 'Uploading...';
+            progressContainer.classList.remove('hidden');
+            progressBar.style.width = '0%';
+            progressBar.textContent = '0%';
+            messageArea.innerHTML = '';
+            downloadArea.classList.add('hidden');
+
+            const formData = new FormData();
+            formData.append('file', file);
+            // formData.append('targetFormat', targetFormat); // If sending target format
+
+            try {
+                const xhr = new XMLHttpRequest();
+                xhr.open('POST', '/upload', true);
+
+                xhr.upload.onprogress = (e) => {
+                    if (e.lengthComputable) {
+                        const percentComplete = Math.round((e.loaded / e.total) * 100);
+                        progressBar.style.width = percentComplete + '%';
+                        progressBar.textContent = percentComplete + '%';
+                    }
+                };
+
+                xhr.onload = () => {
+                    submitButton.disabled = false;
+                    submitButton.textContent = 'Upload & Convert';
+                    progressContainer.classList.add('hidden');
+
+                    if (xhr.status === 200) {
+                        const response = JSON.parse(xhr.responseText);
+                        showMessage('File processed successfully!', 'success');
+                        downloadLink.href = response.downloadUrl;
+                        downloadLink.setAttribute('download', response.fileName); // Suggest original filename for download
+                        downloadArea.classList.remove('hidden');
+                    } else {
+                        let errorMessage = 'An error occurred during upload.';
+                        try {
+                            const errorResponse = JSON.parse(xhr.responseText);
+                            if (errorResponse.error) {
+                                errorMessage = errorResponse.error;
+                            }
+                        } catch (e) { /* Ignore parsing error, use default message */ }
+                        showMessage(errorMessage, 'danger');
+                         console.error('Upload error:', xhr.statusText, xhr.responseText);
+                    }
+                };
+
+                xhr.onerror = () => {
+                    submitButton.disabled = false;
+                    submitButton.textContent = 'Upload & Convert';
+                    progressContainer.classList.add('hidden');
+                    showMessage('A network error occurred. Please try again.', 'danger');
+                    console.error('Network error during upload.');
+                };
+
+                xhr.send(formData);
+
+            } catch (error) {
+                submitButton.disabled = false;
+                submitButton.textContent = 'Upload & Convert';
+                progressContainer.classList.add('hidden');
+                showMessage('An unexpected error occurred: ' + error.message, 'danger');
+                console.error('Upload exception:', error);
+            }
+        });
+
+        function showMessage(message, type = 'info') {
+            const alertDiv = document.createElement('div');
+            alertDiv.className = `alert alert-${type}`;
+            alertDiv.textContent = message;
+            messageArea.innerHTML = ''; // Clear previous messages
+            messageArea.appendChild(alertDiv);
+        }
+    </script>
+</body>
+</html>
