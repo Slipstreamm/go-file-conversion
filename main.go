@@ -6,6 +6,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	_ "image/gif"
+	_ "image/jpeg"
+	_ "image/png"
 	"io"
 	"log"
 	"mime/multipart"
@@ -14,6 +17,8 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	_ "golang.org/x/image/webp" // Import WebP decoder
 )
 
 const (
@@ -88,7 +93,7 @@ func generateID() (string, error) {
 }
 
 // AddFile stores an uploaded file.
-func (fs *FileStore) AddFile(file multipart.File, header *multipart.FileHeader) (*FileMetadata, error) {
+func (fs *FileStore) AddFile(file multipart.File, header *multipart.FileHeader, targetFormat string) (*FileMetadata, error) {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
 
@@ -106,7 +111,7 @@ func (fs *FileStore) AddFile(file multipart.File, header *multipart.FileHeader) 
 	meta := &FileMetadata{
 		ID:           fileID,
 		OriginalName: header.Filename,
-		// In a real scenario, ConvertedName might change based on target format
+		// Default to original name, will be updated after conversion
 		ConvertedName: header.Filename,
 		Size:          fileSize,
 		UploadTime:    time.Now(),
@@ -114,15 +119,21 @@ func (fs *FileStore) AddFile(file multipart.File, header *multipart.FileHeader) 
 		ContentType:   header.Header.Get("Content-Type"),
 	}
 
-	// Simulate conversion - replace this with actual conversion logic
-	// For this example, the "converted" content is the same as the original.
-	// convertedFileBytes, convertedFileName, err := performConversion(fileBytes, header.Filename, "target_format_placeholder")
-	// if err != nil {
-	// 	return nil, fmt.Errorf("conversion failed: %w", err)
-	// }
-	// meta.ConvertedName = convertedFileName
-	// fileSize = int64(len(convertedFileBytes)) // Update size if conversion changes it
-	// fileBytes = convertedFileBytes // Use converted bytes for storage
+	// Perform conversion if target format is specified
+	if targetFormat != "" {
+		var convertedFileName string
+		var convertedBytes []byte
+		convertedBytes, convertedFileName, err = performConversion(fileBytes, header.Filename, targetFormat)
+		if err != nil {
+			return nil, fmt.Errorf("conversion failed: %w", err)
+		}
+		meta.ConvertedName = convertedFileName
+		fileSize = int64(len(convertedBytes)) // Update size if conversion changes it
+		fileBytes = convertedBytes            // Use converted bytes for storage
+
+		// Update content type based on the new format
+		meta.ContentType = getContentTypeForExtension(targetFormat)
+	}
 
 	// Decision: Store in RAM or on Disk
 	if fs.currentRAMUsage+fileSize <= ramLimitBytes {
@@ -132,7 +143,7 @@ func (fs *FileStore) AddFile(file multipart.File, header *multipart.FileHeader) 
 		log.Printf("Stored file %s (%s, %.2f MB) in RAM. Current RAM usage: %.2f MB / %.2f MB",
 			fileID, meta.OriginalName, float64(fileSize)/1024/1024, float64(fs.currentRAMUsage)/1024/1024, float64(ramLimitBytes)/1024/1024)
 	} else {
-		diskFilePath := filepath.Join(fs.diskPath, fileID+"_"+header.Filename)
+		diskFilePath := filepath.Join(fs.diskPath, fileID+"_"+meta.ConvertedName)
 		err := os.WriteFile(diskFilePath, fileBytes, 0644)
 		if err != nil {
 			return nil, fmt.Errorf("failed to write file to disk: %w", err)
@@ -145,6 +156,90 @@ func (fs *FileStore) AddFile(file multipart.File, header *multipart.FileHeader) 
 
 	fs.files[fileID] = meta
 	return meta, nil
+}
+
+// getContentTypeForExtension returns the MIME type for a given file extension
+func getContentTypeForExtension(ext string) string {
+	switch ext {
+	// Image formats
+	case "jpg", "jpeg":
+		return "image/jpeg"
+	case "png":
+		return "image/png"
+	case "gif":
+		return "image/gif"
+	case "webp":
+		return "image/webp"
+	case "bmp":
+		return "image/bmp"
+	case "tiff":
+		return "image/tiff"
+	case "svg":
+		return "image/svg+xml"
+
+	// Audio formats
+	case "mp3":
+		return "audio/mpeg"
+	case "wav":
+		return "audio/wav"
+	case "ogg":
+		return "audio/ogg"
+	case "flac":
+		return "audio/flac"
+	case "aac":
+		return "audio/aac"
+	case "wma":
+		return "audio/x-ms-wma"
+
+	// Video formats
+	case "mp4":
+		return "video/mp4"
+	case "avi":
+		return "video/x-msvideo"
+	case "mov":
+		return "video/quicktime"
+	case "webm":
+		return "video/webm"
+	case "mkv":
+		return "video/x-matroska"
+	case "flv":
+		return "video/x-flv"
+
+	// Document formats
+	case "pdf":
+		return "application/pdf"
+	case "docx":
+		return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+	case "doc":
+		return "application/msword"
+	case "txt":
+		return "text/plain"
+	case "html":
+		return "text/html"
+	case "md":
+		return "text/markdown"
+	case "pptx":
+		return "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+	case "ppt":
+		return "application/vnd.ms-powerpoint"
+	case "xlsx":
+		return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+	case "xls":
+		return "application/vnd.ms-excel"
+	case "csv":
+		return "text/csv"
+
+	// Archive formats
+	case "zip":
+		return "application/zip"
+	case "tar":
+		return "application/x-tar"
+	case "rar":
+		return "application/x-rar-compressed"
+
+	default:
+		return "application/octet-stream"
+	}
 }
 
 // GetFile retrieves a file for download.
@@ -240,9 +335,42 @@ func handleUpload(fs *FileStore) http.HandlerFunc {
 		}
 		defer file.Close()
 
-		// targetFormat := r.FormValue("targetFormat") // If you add target format selection
+		targetFormat := r.FormValue("targetFormat")
 
-		meta, err := fs.AddFile(file, header)
+		// Validate the conversion if a target format is specified
+		if targetFormat != "" {
+			// Create a temporary copy of the file to detect its type
+			tempFile, err := io.ReadAll(file)
+			if err != nil {
+				log.Printf("Error reading file for validation: %v", err)
+				http.Error(w, "Error reading file for validation", http.StatusBadRequest)
+				return
+			}
+
+			// Reset the file reader position
+			file.Seek(0, 0)
+
+			// Detect file type and check if conversion is supported
+			fileType, sourceExt := DetectFileType(tempFile, header.Filename)
+			supportedFormats := GetSupportedConversionFormats(fileType, sourceExt)
+
+			// Check if targetFormat is in the list of supported formats
+			isSupported := false
+			for _, format := range supportedFormats {
+				if format == targetFormat {
+					isSupported = true
+					break
+				}
+			}
+
+			if !isSupported {
+				log.Printf("Unsupported conversion: %s to %s", sourceExt, targetFormat)
+				http.Error(w, fmt.Sprintf("Conversion from %s to %s is not supported", sourceExt, targetFormat), http.StatusBadRequest)
+				return
+			}
+		}
+
+		meta, err := fs.AddFile(file, header, targetFormat)
 		if err != nil {
 			log.Printf("Error adding file: %v", err)
 			http.Error(w, fmt.Sprintf("Error processing file: %v", err), http.StatusInternalServerError)
@@ -292,38 +420,7 @@ func handleDownload(fs *FileStore) http.HandlerFunc {
 	}
 }
 
-// performConversion is a PLACEHOLDER for actual file conversion logic.
-// You need to implement this function based on the types of conversions you want to support.
-// This might involve using external libraries or command-line tools.
-//
-// Parameters:
-//   - inputFileBytes: The byte content of the original file.
-//   - originalFilename: The original name of the file, useful for context or extension.
-//   - targetFormat: A string indicating the desired output format (e.g., "png", "pdf").
-//
-// Returns:
-//   - outputFileBytes: The byte content of the converted file.
-//   - outputFilename: The desired filename for the converted file.
-//   - error: An error if conversion fails.
-func performConversion(inputFileBytes []byte, originalFilename string, targetFormat string) ([]byte, string, error) {
-	log.Printf("Attempting to 'convert' file: %s to target format: %s", originalFilename, targetFormat)
-	// --- START OF PLACEHOLDER ---
-	// In this placeholder, we are just returning the original file without any changes.
-	// You would replace this with your actual conversion code.
-	// For example, if converting an image to PNG, you'd use an image library.
-	// If converting a document to PDF, you might use 'soffice', 'pandoc', or a Go PDF library.
-
-	outputFileBytes := make([]byte, len(inputFileBytes))
-	copy(outputFileBytes, inputFileBytes)
-
-	// Example: Change extension if it was a real conversion
-	// outputFilename := strings.TrimSuffix(originalFilename, filepath.Ext(originalFilename)) + "." + targetFormat
-	outputFilename := originalFilename // Keep original name for this passthrough example
-
-	log.Printf("Placeholder conversion: returning original content for %s", originalFilename)
-	// --- END OF PLACEHOLDER ---
-	return outputFileBytes, outputFilename, nil
-}
+// Note: The performConversion function has been moved to conversion.go
 
 func main() {
 	// You can get this path from an environment variable or config file
@@ -358,7 +455,7 @@ func main() {
 	mux.HandleFunc("/upload", handleUpload(fileStore))
 	mux.HandleFunc("/download/", handleDownload(fileStore)) // Note the trailing slash
 
-	port := "8080"
+	port := "5005"
 	log.Printf("Server starting on port %s", port)
 	log.Printf("File storage: RAM (up to %.2f GB), fallback to disk at '%s'", float64(ramLimitBytes)/1024/1024/1024, fileStore.diskPath)
 	log.Printf("Uploaded files persist for %v", fileExpiryDuration)

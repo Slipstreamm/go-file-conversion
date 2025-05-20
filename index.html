@@ -78,7 +78,16 @@
                 <p id="fileNameDisplay" class="mt-2 text-sm text-gray-600"></p>
             </div>
 
-            <button type="submit" id="submitButton" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-4 rounded-lg shadow-md transition duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50">
+            <div id="formatSelectorContainer" class="hidden mt-4">
+                <label for="convertTo" class="block text-sm font-medium text-gray-700 mb-1">Convert to:</label>
+                <select id="convertTo" class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                    <option value="">Select a format</option>
+                    <!-- Options will be populated dynamically based on the selected file -->
+                </select>
+                <p id="formatHelp" class="mt-1 text-xs text-gray-500">Select a target format for conversion</p>
+            </div>
+
+            <button type="submit" id="submitButton" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-4 rounded-lg shadow-md transition duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 mt-6">
                 Upload & Convert
             </button>
         </form>
@@ -91,7 +100,7 @@
         </div>
 
         <div id="messageArea" class="mt-6"></div>
-        
+
         <div id="downloadArea" class="mt-6 hidden">
             <h2 class="text-xl font-semibold text-gray-700 mb-2">Conversion Complete!</h2>
             <a id="downloadLink" href="#" class="inline-block bg-green-500 hover:bg-green-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md transition duration-150 ease-in-out" download>
@@ -112,7 +121,102 @@
         const messageArea = document.getElementById('messageArea');
         const downloadArea = document.getElementById('downloadArea');
         const downloadLink = document.getElementById('downloadLink');
-        // const convertToSelect = document.getElementById('convertTo'); // If using conversion type selection
+        const formatSelectorContainer = document.getElementById('formatSelectorContainer');
+        const convertToSelect = document.getElementById('convertTo');
+        const formatHelp = document.getElementById('formatHelp');
+
+        // File type to format mapping
+        const conversionOptions = {
+            // Images
+            'image/jpeg': ['png', 'gif', 'webp', 'bmp', 'tiff'],
+            'image/png': ['jpg', 'gif', 'webp', 'bmp', 'tiff'],
+            'image/gif': ['jpg', 'png', 'webp', 'bmp', 'tiff'],
+            'image/webp': ['jpg', 'png', 'gif', 'bmp', 'tiff'],
+            'image/bmp': ['jpg', 'png', 'gif', 'webp', 'tiff'],
+            'image/tiff': ['jpg', 'png', 'gif', 'webp', 'bmp'],
+            'image/svg+xml': ['png', 'jpg'],
+
+            // Audio
+            'audio/mpeg': ['wav', 'ogg', 'flac', 'aac', 'wma'],
+            'audio/wav': ['mp3', 'ogg', 'flac', 'aac', 'wma'],
+            'audio/ogg': ['mp3', 'wav', 'flac', 'aac', 'wma'],
+            'audio/flac': ['mp3', 'wav', 'ogg', 'aac', 'wma'],
+            'audio/aac': ['mp3', 'wav', 'ogg', 'flac', 'wma'],
+            'audio/x-ms-wma': ['mp3', 'wav', 'ogg', 'flac', 'aac'],
+
+            // Video
+            'video/mp4': ['avi', 'mov', 'webm', 'mkv', 'flv', 'mp3', 'wav', 'ogg', 'flac', 'aac'],
+            'video/x-msvideo': ['mp4', 'mov', 'webm', 'mkv', 'flv', 'mp3', 'wav', 'ogg', 'flac', 'aac'],
+            'video/quicktime': ['mp4', 'avi', 'webm', 'mkv', 'flv', 'mp3', 'wav', 'ogg', 'flac', 'aac'],
+            'video/webm': ['mp4', 'avi', 'mov', 'mkv', 'flv', 'mp3', 'wav', 'ogg', 'flac', 'aac'],
+            'video/x-matroska': ['mp4', 'avi', 'mov', 'webm', 'flv', 'mp3', 'wav', 'ogg', 'flac', 'aac'],
+            'video/x-flv': ['mp4', 'avi', 'mov', 'webm', 'mkv', 'mp3', 'wav', 'ogg', 'flac', 'aac'],
+
+            // Documents
+            'application/pdf': ['txt', 'html', 'md'],
+            'application/msword': ['pdf', 'txt', 'html', 'md'],
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['pdf', 'txt', 'html', 'md'],
+            'text/plain': ['pdf', 'html', 'md'],
+            'text/html': ['pdf', 'txt', 'md'],
+            'text/markdown': ['html', 'txt', 'pdf'],
+            'application/vnd.openxmlformats-officedocument.presentationml.presentation': ['pdf'],
+            'application/vnd.ms-powerpoint': ['pdf'],
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['csv', 'pdf'],
+            'application/vnd.ms-excel': ['csv', 'pdf'],
+            'text/csv': ['xlsx', 'xls', 'pdf'],
+
+            // Archives
+            'application/zip': ['tar'],
+            'application/x-tar': ['zip'],
+            'application/x-rar-compressed': ['zip', 'tar']
+        };
+
+        // Extension to MIME type mapping
+        const extensionToMimeType = {
+            // Image formats
+            'jpg': 'image/jpeg',
+            'jpeg': 'image/jpeg',
+            'png': 'image/png',
+            'gif': 'image/gif',
+            'webp': 'image/webp',
+            'bmp': 'image/bmp',
+            'tiff': 'image/tiff',
+            'svg': 'image/svg+xml',
+
+            // Audio formats
+            'mp3': 'audio/mpeg',
+            'wav': 'audio/wav',
+            'ogg': 'audio/ogg',
+            'flac': 'audio/flac',
+            'aac': 'audio/aac',
+            'wma': 'audio/x-ms-wma',
+
+            // Video formats
+            'mp4': 'video/mp4',
+            'avi': 'video/x-msvideo',
+            'mov': 'video/quicktime',
+            'webm': 'video/webm',
+            'mkv': 'video/x-matroska',
+            'flv': 'video/x-flv',
+
+            // Document formats
+            'pdf': 'application/pdf',
+            'doc': 'application/msword',
+            'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'txt': 'text/plain',
+            'html': 'text/html',
+            'md': 'text/markdown',
+            'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+            'ppt': 'application/vnd.ms-powerpoint',
+            'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'xls': 'application/vnd.ms-excel',
+            'csv': 'text/csv',
+
+            // Archive formats
+            'zip': 'application/zip',
+            'tar': 'application/x-tar',
+            'rar': 'application/x-rar-compressed'
+        };
 
         // Handle drag and drop
         const fileInputLabel = fileInput.parentElement;
@@ -145,27 +249,87 @@
                 updateFileNameDisplay();
             }
         }
-        
+
         fileInput.addEventListener('change', updateFileNameDisplay);
 
         function updateFileNameDisplay() {
             if (fileInput.files.length > 0) {
-                fileNameDisplay.textContent = `Selected file: ${fileInput.files[0].name}`;
+                const file = fileInput.files[0];
+                fileNameDisplay.textContent = `Selected file: ${file.name}`;
                 fileInputText.textContent = "Change file";
+
+                // Update conversion options based on file type
+                updateConversionOptions(file);
             } else {
                 fileNameDisplay.textContent = '';
                 fileInputText.textContent = "Drag & drop a file here, or click to select";
+                formatSelectorContainer.classList.add('hidden');
+            }
+        }
+
+        function updateConversionOptions(file) {
+            // Clear existing options except the default one
+            while (convertToSelect.options.length > 1) {
+                convertToSelect.remove(1);
+            }
+
+            // Get file extension
+            const fileName = file.name;
+            const fileExtension = fileName.split('.').pop().toLowerCase();
+
+            // Try to determine MIME type
+            let mimeType = file.type;
+
+            // If MIME type is not available or is generic, try to use the extension
+            if (!mimeType || mimeType === 'application/octet-stream') {
+                mimeType = extensionToMimeType[fileExtension] || '';
+            }
+
+            // Get conversion options based on MIME type
+            let options = [];
+            if (conversionOptions[mimeType]) {
+                options = conversionOptions[mimeType];
+            } else {
+                // Try to match by file extension if MIME type is not recognized
+                for (const [type, extensions] of Object.entries(conversionOptions)) {
+                    if (type.includes(fileExtension) || type.includes(fileExtension.replace('jpg', 'jpeg'))) {
+                        options = extensions;
+                        break;
+                    }
+                }
+            }
+
+            // Add options to select
+            if (options.length > 0) {
+                options.forEach(format => {
+                    const option = document.createElement('option');
+                    option.value = format;
+                    option.textContent = format.toUpperCase();
+                    convertToSelect.appendChild(option);
+                });
+
+                // Show format selector
+                formatSelectorContainer.classList.remove('hidden');
+                formatHelp.textContent = `Convert from ${fileExtension.toUpperCase()} to one of the available formats`;
+            } else {
+                formatSelectorContainer.classList.add('hidden');
             }
         }
 
         uploadForm.addEventListener('submit', async (event) => {
             event.preventDefault();
-            
+
             const file = fileInput.files[0];
-            // const targetFormat = convertToSelect.value; // If using conversion type selection
+            const targetFormat = convertToSelect.value;
 
             if (!file) {
                 showMessage('Please select a file to upload.', 'danger');
+                return;
+            }
+
+            // Validate format selection if format selector is visible
+            if (!formatSelectorContainer.classList.contains('hidden') && !targetFormat) {
+                showMessage('Please select a target format for conversion.', 'danger');
                 return;
             }
 
@@ -180,7 +344,9 @@
 
             const formData = new FormData();
             formData.append('file', file);
-            // formData.append('targetFormat', targetFormat); // If sending target format
+            if (targetFormat) {
+                formData.append('targetFormat', targetFormat);
+            }
 
             try {
                 const xhr = new XMLHttpRequest();
